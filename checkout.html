@@ -12,14 +12,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            corePlugins: {
-                preflight: false,
-            }
-        }
-    </script>
+
     <!-- Supabase JS -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
     <style>
@@ -233,7 +226,6 @@
                 'https://connect.facebook.net/en_US/fbevents.js');
             fbq('init', '1879911229646791');
             fbq('track', 'PageView');
-            fbq('track', 'InitiateCheckout');
         });
     </script>
     <noscript><img height="1" width="1" style="display:none"
@@ -358,7 +350,7 @@
             <p style="font-size: 18px; margin-bottom: 30px;">
                 الرجاء التواصل معنا عبر الواتساب لتأكيد الدفع وتفعيل اشتراكك فوراً لتتمكن من الوصول لمحتوى الدورة.
             </p>
-            <a href="https://wa.me/201118388010" target="_blank" class="btn-primary wa_activation_link"
+            <a href="https://wa.me/201118388010?text=مرحباً،%20لقد%20قمت%20بالتحويل%20وأرغب%20في%20تأكيد%20الدفع%20وتفعيل%20الاشتراك" target="_blank" class="btn-primary wa_activation_link" id="checkoutWaBtn"
                 style="background: #25D366; border-color: #25D366; display: inline-flex; align-items: center; justify-content: center; gap: 10px; font-size: 18px; padding: 15px 30px; text-decoration: none;">
                 <i class="fa-brands fa-whatsapp"></i> تواصل عبر الواتساب الآن
             </a>
@@ -375,7 +367,7 @@
             <p style="font-size: 18px; margin-bottom: 30px;">
                 لقد قمت بإرسال طلب اشتراك من هذا الحساب سابقاً. يرجى التواصل معنا عبر الواتساب لتفعيل اشتراكك أو حل أي مشكلة.
             </p>
-            <a href="https://wa.me/201118388010" target="_blank" class="btn-primary wa_activation_link"
+            <a href="https://wa.me/201118388010?text=مرحباً،%20واجهتني%20مشكلة%20في%20الطلب%20أو%20لدي%20طلب%20سابق%20وأريد%20المساعدة" target="_blank" class="btn-primary wa_activation_link"
                 style="background: #25D366; border-color: #25D366; display: inline-flex; align-items: center; justify-content: center; gap: 10px; font-size: 18px; padding: 15px 30px; text-decoration: none;">
                 <i class="fa-brands fa-whatsapp"></i> تواصل عبر الواتساب الآن
             </a>
@@ -489,7 +481,15 @@
 
         // Supabase Integration & Content Loading
         let supabaseClient;
-        window.addEventListener('DOMContentLoaded', initSupabase);
+        window.addEventListener('DOMContentLoaded', () => {
+            // Check URL params for Fawaterak redirection status IMMEDIATELY
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('status') === 'success') {
+                window.location.href = 'success.html';
+                return;
+            }
+            initSupabase();
+        });
 
         function initSupabase() {
             if (window.supabase) {
@@ -668,12 +668,9 @@
                     setPaymentCache(paymentMethods);
                 }
 
-                // Check URL params for Fawaterak redirection status
+                // The success redirect is now handled at the very beginning of the page load.
                 const urlParams = new URLSearchParams(window.location.search);
-                if (urlParams.get('status') === 'success') {
-                    const successModal = document.getElementById('whatsappSuccessModal');
-                    if (successModal) successModal.classList.add('active');
-                } else if (urlParams.get('status') === 'fail') {
+                if (urlParams.get('status') === 'fail') {
                     showToast('فشلت عملية الدفع الإلكتروني. يرجى المحاولة مرة أخرى أو اختيار طريقة أخرى.', 'error');
                 }
             } catch (err) {
@@ -755,8 +752,19 @@
                     receiptUrl = publicUrlData.publicUrl;
                 }
 
+                // Generate ID client-side to avoid needing SELECT permissions after INSERT
+                const generateUUID = () => {
+                    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+                    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                        const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+                        return v.toString(16);
+                    });
+                };
+                const newSubscriptionId = generateUUID();
+                
                 // Insert subscription
                 const subscriptionPayload = {
+                    id: newSubscriptionId,
                     full_name: fullName,
                     phone: phone,
                     payment_method: paymentMethod,
@@ -768,11 +776,9 @@
                     subscriptionPayload.receipt_url = receiptUrl;
                 }
 
-                const { data: subData, error: insertError } = await supabaseClient
+                const { error: insertError } = await supabaseClient
                     .from('subscriptions')
-                    .insert([subscriptionPayload])
-                    .select('id')
-                    .single();
+                    .insert([subscriptionPayload]);
 
                 if (insertError) {
                     throw new Error('فشل في تسجيل الطلب: ' + insertError.message);
@@ -785,15 +791,15 @@
                     const { data: { session } } = await supabaseClient.auth.getSession();
                     const email = session?.user?.email || "";
 
-                    // Get cart total from DOM, handle Arabic numerals if any
+                    // Get cart total from DOM
                     const cartTotalText = document.getElementById('dyn_cta_new_price')?.textContent || "700";
-                    const englishNumStr = cartTotalText.replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
-                    const cartTotal = parseFloat(englishNumStr.replace(/[^0-9.]/g, '')) || 700;
+                    const cartTotal = parseFloat(cartTotalText.replace(/[^0-9.]/g, '')) || 700;
 
                     const payRes = await supabaseClient.functions.invoke('create-fawaterak-payment', {
                         body: {
-                            subscriptionId: subData.id,
+                            subscriptionId: newSubscriptionId,
                             cartTotal: cartTotal,
+                            origin_url: window.location.origin,
                             customer: {
                                 first_name: fullName.split(' ')[0] || "Customer",
                                 last_name: fullName.split(' ').slice(1).join(' ') || "Fawaterak",
@@ -812,6 +818,7 @@
 
                     const checkoutUrl = payRes.data?.url;
                     if (checkoutUrl) {
+                        localStorage.setItem('sc_checkout_price', cartTotal);
                         window.location.href = checkoutUrl;
                         return; // Redirecting
                     } else {
@@ -841,6 +848,7 @@
 
                 // FB CAPI
                 try {
+
                     const hashedPhone = await hashData(phone);
                     const { data: { session } } = await supabaseClient.auth.getSession();
                     const email = session?.user?.email || "";
@@ -848,29 +856,23 @@
 
                     await supabaseClient.functions.invoke('facebook-capi', {
                         body: {
-                            event_name: 'CompleteRegistration',
+                            event_name: 'Purchase',
                             event_source_url: window.location.href,
                             user_data: {
                                 ph: [hashedPhone],
                                 em: hashedEmail ? [hashedEmail] : undefined
+                            },
+                            custom_data: {
+                                value: cartTotal,
+                                currency: 'EGP'
                             }
                         }
                     });
                 } catch (fbErr) {}
 
-                // Show Success Modal
+                // Redirect to unified success page
                 document.getElementById('subscriptionForm').reset();
-                const preview = document.getElementById('receiptPreview');
-                if (preview) {
-                    preview.src = '';
-                    preview.style.display = 'none';
-                }
-                const icon = document.getElementById('receiptIcon');
-                if (icon) icon.style.display = 'block';
-                const text = document.getElementById('receiptText');
-                if (text) text.style.display = 'block';
-
-                successModal.classList.add('active');
+                window.location.href = 'success.html';
 
             } catch (err) {
                 console.error(err);

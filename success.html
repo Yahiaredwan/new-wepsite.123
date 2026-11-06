@@ -12,14 +12,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            corePlugins: {
-                preflight: false,
-            }
-        }
-    </script>
+
     <style>
         .success-container {
             max-width: 600px;
@@ -87,7 +80,8 @@
                 'https://connect.facebook.net/en_US/fbevents.js');
             fbq('init', '1879911229646791');
             fbq('track', 'PageView');
-            fbq('track', 'Purchase');
+            var dynamicPrice = localStorage.getItem('sc_checkout_price') || '700';
+            fbq('track', 'Purchase', { value: parseFloat(dynamicPrice), currency: 'EGP' });
         });
     </script>
     <noscript><img height="1" width="1" style="display:none"
@@ -116,14 +110,26 @@
         <div class="success-container">
             <i class="fa-solid fa-circle-check success-icon"></i>
             <h1 class="success-title">تم الدفع بنجاح!</h1>
-            <p class="success-message">لقد تم استلام دفعتك بنجاح. شكراً لثقتك بنا.</p>
+            <p class="success-message">لقد تم استلام دفعتك بنجاح. شكراً لثقتك بنا.<br>جاري تحويلك إلى الواتساب تلقائياً...</p>
             
-            <a href="https://wa.me/201118388010?text=مرحباً،%20لقد%20قمت%20بالدفع%20وأرغب%20في%20تفعيل%20الاشتراك%20الخاص%20بي" target="_blank" class="whatsapp-btn">
+            <a href="https://wa.me/201118388010?text=مرحباً،%20لقد%20قمت%20بالدفع%20وأرغب%20في%20تفعيل%20الاشتراك%20الخاص%20بي" id="waRedirectBtn" target="_blank" class="whatsapp-btn">
                 <i class="fa-brands fa-whatsapp"></i>
                 تواصل على الواتساب لتفعيل الاشتراك الخاص بك
             </a>
         </div>
     </div>
+
+    <script>
+        // Auto-redirect to WhatsApp on page load for mobile and desktop
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                var waBtn = document.getElementById('waRedirectBtn');
+                if (waBtn) {
+                    window.location.href = waBtn.href;
+                }
+            }, 3000); // 3 seconds delay before opening WhatsApp
+        });
+    </script>
 
     <!-- Footer -->
     <footer class="footer">

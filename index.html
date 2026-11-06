@@ -55,15 +55,7 @@
         } catch(e) {}
     </script>
 
-    <!-- Tailwind CSS (No Preflight to avoid conflicts) -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            corePlugins: {
-                preflight: false,
-            }
-        }
-    </script>
+
 
     <!-- Preload LCP hero content hint -->
     <link rel="dns-prefetch" href="https://tiornpjjrtajnmgvoqfb.supabase.co">
@@ -1839,6 +1831,9 @@
                         if (el.tagName === 'IMG') {
                             if (item.content && item.content.trim() !== '') {
                                 el.src = item.content;
+                                if (!item.id.includes('hero_img')) {
+                                    el.setAttribute('loading', 'lazy');
+                                }
                                 el.style.display = 'block';
                             } else {
                                 el.removeAttribute('src');
@@ -1920,8 +1915,8 @@
 
             async function fetchAllContent() {
                 try {
-                    const response = await fetch('https://www.yahiaredwan.com/api/cms/site_content');
-                    const { data } = await response.json();
+                    const { data, error } = await supabaseClient.from('site_content').select('*');
+                    if (error) throw error;
                     return data;
                 } catch (e) {
                     return null;
@@ -1960,13 +1955,13 @@
                     curriculumRes,
                     faqsRes
                 ] = await Promise.all([
-                    fetch('https://www.yahiaredwan.com/api/cms/site_content').then(res => res.json()),
-                    fetch('https://www.yahiaredwan.com/api/cms/payment_methods').then(res => res.json()),
-                    fetch('https://www.yahiaredwan.com/api/cms/sections').then(res => res.json()),
-                    fetch('https://www.yahiaredwan.com/api/cms/features').then(res => res.json()),
-                    fetch('https://www.yahiaredwan.com/api/cms/trainers').then(res => res.json()),
-                    fetch('https://www.yahiaredwan.com/api/cms/curriculum').then(res => res.json()),
-                    fetch('https://www.yahiaredwan.com/api/cms/faqs').then(res => res.json())
+                    supabaseClient.from('site_content').select('*'),
+                    supabaseClient.from('payment_methods').select('*').order('order_index', { ascending: true }),
+                    supabaseClient.from('sections').select('*').eq('status', 'active').order('order_index', { ascending: true }),
+                    supabaseClient.from('features').select('*').order('order_index', { ascending: true }),
+                    supabaseClient.from('trainers').select('*').order('order_index', { ascending: true }),
+                    supabaseClient.from('curriculum').select('*').order('order_index', { ascending: true }),
+                    supabaseClient.from('faqs').select('*').order('order_index', { ascending: true })
                 ]);
 
                 // 1. Fetch site_content
@@ -2202,37 +2197,13 @@
             const btn = document.getElementById('emailLoginBtn');
             btn.textContent = 'جاري تسجيل الدخول...';
 
-            try {
-                const response = await fetch('https://www.yahiaredwan.com/api/auth/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, password })
-                });
+            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
 
-                if (!response.ok) {
-                    const errData = await response.json();
-                    showToast("فشل تسجيل الدخول: " + (errData.detail || "خطأ غير معروف"));
-                    btn.textContent = 'دخول';
-                    return;
-                }
-
-                const data = await response.json();
-                localStorage.setItem('fastapi_token', data.access_token);
-                
-                showToast("تم تسجيل الدخول بنجاح!", "success");
-                loginModal.classList.remove('active');
+            if (error) {
+                showToast("فشل تسجيل الدخول: " + error.message);
                 btn.textContent = 'دخول';
-                
-                document.getElementById('nav-cta-container').innerHTML = 
-                    '<a href="#" class="btn-outline-login btn-logout" id="logoutBtn">تسجيل الخروج</a>';
-                    
-                document.getElementById('logoutBtn').addEventListener('click', () => {
-                    localStorage.removeItem('fastapi_token');
-                    location.reload();
-                });
-
-            } catch (error) {
-                showToast("خطأ في الاتصال بالخادم.");
+            } else {
+                loginModal.classList.remove('active');
                 btn.textContent = 'دخول';
             }
         });
@@ -2270,6 +2241,7 @@
         document.getElementById('supabaseSignupForm')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = document.getElementById('signupEmail').value;
+            const phone = document.getElementById('signupPhone').value;
             const password = document.getElementById('signupPassword').value;
             const confirmPassword = document.getElementById('signupConfirmPassword').value;
 
@@ -2281,27 +2253,30 @@
             const btn = document.getElementById('emailSignupBtn');
             btn.textContent = 'جاري إنشاء الحساب...';
 
-            try {
-                const response = await fetch('https://www.yahiaredwan.com/api/auth/register', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, password })
-                });
+            // Send phone number as user metadata
+            const { data, error } = await supabaseClient.auth.signUp({
+                email,
+                password,
+                options: {
+                    data: {
+                        phone: phone
+                    }
+                }
+            });
 
-                if (!response.ok) {
-                    const errData = await response.json();
-                    showToast("فشل إنشاء الحساب: " + (errData.detail || "حدث خطأ"));
-                    btn.textContent = 'إنشاء الحساب';
-                    return;
+            if (error) {
+                showToast("فشل إنشاء الحساب: " + error.message);
+                btn.textContent = 'إنشاء الحساب';
+            } else {
+                // Insert pending request immediately to avoid waiting for email confirmation
+                try {
+                    await supabaseClient.from('user_approvals').insert([{ email: email, phone: phone, status: 'pending' }]);
+                } catch (err) {
+                    console.error("Direct insert error:", err);
                 }
 
-                showToast("تم إنشاء الحساب بنجاح! يمكنك الآن تسجيل الدخول.", "success");
+                showToast("تم إرسال رابط تأكيد إلى بريدك الإلكتروني. يرجى مراجعة بريدك الوارد لتفعيل الحساب.", "success");
                 signupModal.classList.remove('active');
-                document.getElementById('loginModal').classList.add('active');
-                btn.textContent = 'إنشاء الحساب';
-
-            } catch (error) {
-                showToast("خطأ في الاتصال بالخادم.");
                 btn.textContent = 'إنشاء الحساب';
             }
         });
@@ -2575,10 +2550,7 @@
 
                 // Trigger active Social Media Pixels conversion event
                 if (typeof window.trackPixelEvent === 'function') {
-                    const newPriceText = document.getElementById('dyn_cta_new_price')?.textContent || '700';
-                    const englishNumStr = newPriceText.replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
-                    const newPriceVal = parseFloat(englishNumStr.replace(/[^0-9.]/g, '')) || 700;
-                    window.trackPixelEvent('Purchase', { value: newPriceVal, currency: 'EGP' });
+                    window.trackPixelEvent('Purchase', { value: 700, currency: 'EGP' });
                 }
 
                 // Show WhatsApp Success Modal
@@ -2978,26 +2950,8 @@
             const status = urlParams.get('status');
             
             if (status === 'success') {
-                // Trigger active Social Media Pixels conversion event (Online Payment)
-                if (typeof window.trackPixelEvent === 'function') {
-                    const newPriceText2 = document.getElementById('dyn_cta_new_price')?.textContent || '700';
-                    const englishNumStr2 = newPriceText2.replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
-                    const newPriceVal2 = parseFloat(englishNumStr2.replace(/[^0-9.]/g, '')) || 700;
-                    window.trackPixelEvent('Purchase', { value: newPriceVal2, currency: 'EGP' });
-                }
-
-                Swal.fire({
-                    icon: 'success',
-                    title: 'مبروك! 🎉',
-                    html: '<p style="font-size: 18px; margin-bottom: 10px; font-weight: bold; color: #B89C65;">لقرار من أفضل قرارات حياتك نحو الأمان لك ولأسرتك</p>' +
-                          '<p style="font-size: 16px; margin-bottom: 25px;">تواصل على الواتساب علشان نفعل لك طلبك</p>' +
-                          '<a href="https://wa.me/201118388010" target="_blank" style="background: #25D366; color: white; display: inline-flex; align-items: center; justify-content: center; gap: 10px; font-size: 18px; padding: 12px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; width: 100%; box-sizing: border-box;"><i class="fa-brands fa-whatsapp" style="font-size: 24px;"></i> رابط الواتساب</a>',
-                    showConfirmButton: false,
-                    allowOutsideClick: false
-                });
-                
-                // Clean the URL without refreshing
-                window.history.replaceState({}, document.title, window.location.pathname);
+                // Redirect to the unified success page
+                window.location.href = 'success.html';
             } else if (status === 'fail') {
                 Swal.fire({
                     icon: 'error',

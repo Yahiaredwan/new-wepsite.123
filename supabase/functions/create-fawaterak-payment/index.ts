@@ -1,9 +1,15 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const ALLOWED_ORIGINS = ['https://yahiaredwan.com', 'https://www.yahiaredwan.com'];
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || '';
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowedOrigin,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  };
+}
 
 // In-memory cache to reduce DB queries during high traffic
 let siteContentCache: {
@@ -18,11 +24,11 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response("ok", { headers: getCorsHeaders(req) });
   }
 
   try {
-    const { subscriptionId, customer } = await req.json();
+    const { subscriptionId, customer, origin_url } = await req.json();
 
     if (!subscriptionId || !customer) {
       throw new Error("Missing required body parameters.");
@@ -53,9 +59,8 @@ Deno.serve(async (req) => {
           if (item.id === "fawaterak_client_secret" && item.content) envClientSecret = item.content;
           if (item.id === "fawaterak_env" && item.content) envFawaterak = item.content;
           if (item.id === "cta_new_price" && item.content) {
-            // Extract numbers only, handling Arabic numerals
-            const englishNumStr = item.content.replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
-            const parsed = parseFloat(englishNumStr.replace(/[^0-9.]/g, ''));
+            // Extract numbers only
+            const parsed = parseFloat(item.content.replace(/[^0-9.]/g, ''));
             if (!isNaN(parsed) && parsed > 0) defaultPrice = parsed;
           }
         });
@@ -117,7 +122,10 @@ Deno.serve(async (req) => {
     // Clean trailing slash if present
     const cleanedSupabaseUrl = supabaseUrl.endsWith("/") ? supabaseUrl.slice(0, -1) : supabaseUrl;
 
-    const reqOrigin = req.headers.get("origin") || req.headers.get("referer") || "http://localhost:5500";
+    let reqOrigin = origin_url || req.headers.get("origin") || req.headers.get("referer") || "https://yahiaredwan.com";
+    if (reqOrigin.includes("localhost") || reqOrigin.includes("127.0.0.1")) {
+        reqOrigin = "https://yahiaredwan.com";
+    }
     const originUrl = reqOrigin.endsWith("/") ? reqOrigin.slice(0, -1) : reqOrigin;
 
     const redirectionUrls = {
@@ -185,7 +193,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({ url: transData.data.url }),
       {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
         status: 200,
       }
     );
@@ -194,7 +202,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({ error: error.message }),
       {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
         status: 200, // Returning 200 so the frontend can parse the JSON error body
       }
     );

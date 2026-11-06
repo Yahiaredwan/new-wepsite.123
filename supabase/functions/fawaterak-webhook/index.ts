@@ -1,14 +1,20 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const ALLOWED_ORIGINS = ['https://yahiaredwan.com', 'https://www.yahiaredwan.com'];
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || '';
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowedOrigin,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  };
+}
 
 Deno.serve(async (req) => {
   // CORS Preflight
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response("ok", { headers: getCorsHeaders(req) });
   }
 
   try {
@@ -21,7 +27,7 @@ Deno.serve(async (req) => {
     if (!invoiceId) {
       console.warn("Could not find invoice identifier in payload.");
       return new Response(JSON.stringify({ success: false, error: "Missing invoice identifier" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
         status: 400,
       });
     }
@@ -175,59 +181,6 @@ Deno.serve(async (req) => {
               }]);
           }
         }
-
-        // 3. Send Purchase event to Facebook CAPI
-        try {
-          const PIXEL_ID = "1879911229646791";
-          const ACCESS_TOKEN = "EAAR2DkffaHkBSF0mFyZCDZBCxDGdq2pZAGqiZB9jsCsazozLCfGSGbYUafepzNMxoXolPoyoZBOeTjTAIWwCSYCMgBuXlp13AwqYcsewDA4TcoNf7gosC2ZAy5RBAZCmW3O4tZCMuVZCjtsv1NLBNVplGlN0rVX0BYWm8rZCZAwBIDyTY6pYhUICGSMiagXJaa8IwZDZD";
-          
-          const hashData = async (data) => {
-            if (!data) return undefined;
-            const encoder = new TextEncoder();
-            const dataBuf = encoder.encode(data.toLowerCase().trim());
-            const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuf);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-          };
-
-          let em, ph;
-          if (sub.email) em = await hashData(sub.email);
-          if (sub.phone) ph = await hashData(sub.phone);
-
-          const fbPayload = {
-            data: [
-              {
-                event_name: "Purchase",
-                event_time: Math.floor(Date.now() / 1000),
-                action_source: "website",
-                user_data: {
-                  em: em || "",
-                  ph: ph || "",
-                },
-                custom_data: {
-                  currency: "EGP",
-                  value: 2950
-                }
-              }
-            ]
-          };
-
-          const fbUrl = `https://graph.facebook.com/v19.0/${PIXEL_ID}/events?access_token=${ACCESS_TOKEN}`;
-          const fbRes = await fetch(fbUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(fbPayload)
-          });
-          
-          if (!fbRes.ok) {
-            const errBody = await fbRes.text();
-            console.error("Failed to send Purchase to FB CAPI:", errBody);
-          } else {
-            console.log("Successfully sent Purchase event to FB CAPI");
-          }
-        } catch (fbErr) {
-          console.error("Error sending to FB CAPI:", fbErr);
-        }
       } else {
         console.warn(`No matching subscription found in database for invoice: ${invoiceId}`);
       }
@@ -236,13 +189,13 @@ Deno.serve(async (req) => {
     }
 
     return new Response(JSON.stringify({ success: true }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       status: 200,
     });
   } catch (error) {
     console.error("fawaterak-webhook function error:", error.message);
     return new Response(JSON.stringify({ success: false, error: error.message }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       status: 500,
     });
   }
